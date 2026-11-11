@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from emg_eeg_denoise.cli import main
-from emg_eeg_denoise.pipeline.batch import (
+from emg_denoise.cli import main
+from emg_denoise.pipeline.batch import (
     BatchOptions,
     destination,
     mirror_root,
@@ -88,7 +88,7 @@ def test_existing_denoised_output_is_refused_without_force(tmp_path):
 
 def test_a_split_recording_is_flagged(tmp_path, monkeypatch):
     """Stage two reporting more than one segment means the axis was not uniform."""
-    import emg_eeg_denoise.pipeline.batch as batch_module
+    import emg_denoise.pipeline.batch as batch_module
 
     build_session_tree(tmp_path / "raw", sessions=("L3-002",), sides=("left",), samples=4000)
 
@@ -261,9 +261,7 @@ def test_cli_batch_rejects_unmatched_inputs(tmp_path):
 def test_inplace_batch_rewrites_matched_parquets(tmp_path):
     sources = build_session_tree(tmp_path / "raw", sessions=("L3-002",), sides=("left", "right"))
     originals = {path: path.read_bytes() for path in sources}
-    payload = run_batch(
-        BatchOptions(patterns=(str(tmp_path / "raw/**/*.parquet"),), inplace=True)
-    )
+    payload = run_batch(BatchOptions(patterns=(str(tmp_path / "raw/**/*.parquet"),), inplace=True))
     assert payload["succeeded"] == 2
     assert payload["inplace"] is True
     for path in sources:

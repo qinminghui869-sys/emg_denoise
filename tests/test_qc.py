@@ -9,10 +9,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from emg_eeg_denoise.cli import main
-from emg_eeg_denoise.qc import DEFAULTS, QcOptions, run_qc
-from emg_eeg_denoise.qc.discovery import channel_names, discover
-from emg_eeg_denoise.qc.signal import metrics, spectrum, windows
+from emg_denoise.cli import main
+from emg_denoise.qc import DEFAULTS, QcOptions, run_qc
+from emg_denoise.qc.discovery import channel_names, discover
+from emg_denoise.qc.signal import metrics, spectrum, windows
 
 
 def write(path, t, **signals):

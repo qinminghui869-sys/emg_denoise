@@ -4,11 +4,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from emg_eeg_denoise.cli import main
-from emg_eeg_denoise.dsp.filters import FS
-from emg_eeg_denoise.io import load_recording
-from emg_eeg_denoise.pipeline.retime import RetimeOptions, load_acquisition, run_retime
-from emg_eeg_denoise.pipeline.timebase import (
+from emg_denoise.cli import main
+from emg_denoise.dsp.filters import FS
+from emg_denoise.io import load_recording
+from emg_denoise.pipeline.retime import RetimeOptions, load_acquisition, run_retime
+from emg_denoise.pipeline.timebase import (
     OBSERVED_TICK_S,
     estimate_tick,
     find_resync_points,
@@ -456,7 +456,7 @@ def test_gap_is_not_anchor_and_not_smeared():
 
 
 def test_retime_then_offline_preserves_times_and_rejects_causal(tmp_path):
-    from emg_eeg_denoise.pipeline.replay import ReplayOptions, run_replay
+    from emg_denoise.pipeline.replay import ReplayOptions, run_replay
 
     source, retimed = tmp_path / "raw.csv", tmp_path / "retimed.csv"
     original = write_acquisition_csv(source, samples=4000, channels=1)
@@ -474,8 +474,8 @@ def test_retime_then_offline_preserves_times_and_rejects_causal(tmp_path):
 
 
 def test_offline_irregular_matches_explicit_grid_reference():
-    from emg_eeg_denoise.dsp.offline import offline_denoise
-    from emg_eeg_denoise.pipeline.replay import _denoise_arrays
+    from emg_denoise.dsp.offline import offline_denoise
+    from emg_denoise.pipeline.replay import _denoise_arrays
 
     t, _ = rebuild_timestamps(quantized_stamps(4000))
     x = (np.sin(2 * np.pi * 80 * t) + 0.2 * np.sin(2 * np.pi * 50 * t))[:, None]
@@ -494,7 +494,7 @@ def test_offline_irregular_matches_explicit_grid_reference():
 
 
 def test_offline_short_segment_is_explicitly_invalid():
-    from emg_eeg_denoise.pipeline.replay import _denoise_arrays
+    from emg_denoise.pipeline.replay import _denoise_arrays
 
     t = np.arange(10) / 2000
     x = np.ones((10, 1))

@@ -4,8 +4,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from emg_eeg_denoise.cli import main
-from emg_eeg_denoise.io import (
+from emg_denoise.cli import main
+from emg_denoise.io import (
     atomic_text_writer,
     dump_json,
     jsonable,
@@ -61,7 +61,6 @@ def test_path_guards_cover_symlink_and_hardlink_aliases(tmp_path):
         validate_output_paths([source], [output, source])
     with pytest.raises(ValueError, match="distinct"):
         validate_output_paths([source], [output, report, report])
-
 
 
 def test_strict_json_serialization_and_atomic_rollback(tmp_path):

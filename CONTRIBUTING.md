@@ -29,4 +29,4 @@ make check
 
 提交信息采用 `type: concrete change`，如 `fix: preserve replay output when CSV parsing fails`。PR说明问题、最终行为和验证结果。修改公共接口时同步README及架构说明。
 
-本地`.venv/`、`artifacts/`、缓存、测试覆盖率文件与密钥均不提交。仓库保留验证报告快照和可复现命令，不保留大体积生成数据。项目未附授权许可证；贡献前请确认你有权提交相应代码或数据。
+本地 `.venv/`、`artifacts/`、`.bench_tmp/`、缓存、测试覆盖率文件与密钥均不提交。仓库保留验证报告快照和可复现命令，不保留大体积生成数据。项目未附授权许可证；贡献前请确认你有权提交相应代码或数据。

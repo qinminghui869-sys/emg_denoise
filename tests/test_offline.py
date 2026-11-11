@@ -1,7 +1,7 @@
 import numpy as np
 
-from emg_eeg_denoise.dsp.filters import CausalFilterBank
-from emg_eeg_denoise.dsp.offline import mirror_pad, mirror_unpad, offline_denoise
+from emg_denoise.dsp.filters import CausalFilterBank
+from emg_denoise.dsp.offline import mirror_pad, mirror_unpad, offline_denoise
 
 
 def test_mirror_pad_roundtrip():
@@ -25,18 +25,3 @@ def test_offline_emg_reduces_edge_energy_vs_causal():
     assert info["method"] == "offline_filtfilt"
     assert "梳状" in "".join(info["stages"])
     assert off_e < 0.6 * caus_e
-
-
-def test_offline_eeg_runs_and_keeps_shape():
-    x = np.random.default_rng(1).normal(size=(2000, 2))
-    y, info = offline_denoise(x, modality="eeg", sample_rate=250)
-    assert y.shape == x.shape
-    assert info["method"] == "offline_filtfilt"
-    assert any("陷波" in stage for stage in info["stages"])
-
-
-def test_offline_eeg_at_1000hz():
-    x = np.random.default_rng(2).normal(size=(4000, 4))
-    y, info = offline_denoise(x, modality="eeg", sample_rate=1000)
-    assert y.shape == x.shape
-    assert info["fs"] == 1000.0

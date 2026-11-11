@@ -17,8 +17,9 @@ from .._typing import FloatArray, IntArray
 from ..dsp.core import DenoiserConfig, RealtimeDenoiser
 from ..dsp.filters import (
     Modality,
+    assert_emg_recording,
     estimate_rate_hz,
-    infer_modality,
+    modality_preset,
     resolved_preset,
 )
 from ..dsp.offline import offline_denoise
@@ -56,7 +57,8 @@ class ReplayOptions:
 
     @property
     def resolved_modality(self) -> Modality:
-        return self.modality if self.modality is not None else infer_modality(self.source)
+        chosen = "emg" if self.modality is None else self.modality
+        return modality_preset(chosen).modality
 
     def validate_paths(self) -> None:
         outputs = [self.destination]
@@ -83,10 +85,7 @@ class ReplayReport:
     resampled_segments: int = 0
     unfiltered_samples: int = 0
     method: str = "offline_filtfilt"
-    note: str = (
-        "Offline file denoise matches viz/viewer.html "
-        "(mirror pad + filtfilt + period-extended comb/notch)."
-    )
+    note: str = "Offline file denoise: mirror pad + filtfilt + period-extended comb."
     stages: list[str] = field(default_factory=list)
 
 
@@ -167,7 +166,7 @@ def resolve_process_rate(
                 f"timestamps ≈ {measured:.3f} Hz but feature fps is {declared:g} Hz "
                 f"(pass --rate to override after checking the recording)"
             )
-        # Modality default disagreed with the recording (e.g. Neuroscan 1000 Hz vs EEG 250).
+        # Preset 2000 Hz disagreed with the measured recording rate.
         declared = measured
 
     preset = resolved_preset(modality, declared)
@@ -176,6 +175,7 @@ def resolve_process_rate(
 
 def run_replay(options: ReplayOptions) -> dict[str, Any]:
     """Denoise a recording; a failed write leaves any existing output intact."""
+    assert_emg_recording(options.source)
     options.validate_paths()
     if _is_parquet_path(Path(options.source)):
         return _run_replay_parquet(options)
@@ -248,14 +248,12 @@ def _denoise_arrays(
     out_samples = []
     out_valid = []
     out_segments = []
-    bounds = _segment_bounds(timestamps, period)
-    if modality == "emg":
-        edges = [
-            0,
-            *(np.flatnonzero(np.diff(timestamps) > 3 * period) + 1).tolist(),
-            len(timestamps),
-        ]
-        bounds = list(zip(edges[:-1], edges[1:], strict=True))
+    edges = [
+        0,
+        *(np.flatnonzero(np.diff(timestamps) > 3 * period) + 1).tolist(),
+        len(timestamps),
+    ]
+    bounds = list(zip(edges[:-1], edges[1:], strict=True))
     for segment_id, (start, stop) in enumerate(bounds):
         chunk_t = timestamps[start:stop]
         chunk_x = samples[start:stop]
@@ -263,12 +261,12 @@ def _denoise_arrays(
         started = perf_counter()
         irregular = np.any(np.abs(np.diff(chunk_t) - period) > 1e-6)
         segment_valid = True
-        if modality == "emg" and len(chunk_t) < 32:
+        if len(chunk_t) < 32:
             filtered = chunk_x.copy()
             segment_valid = False
             report.unfiltered_samples += len(chunk_t)
             diagnostics = {"note": "Short segments preserved unfiltered and marked invalid."}
-        elif modality == "emg" and irregular:
+        elif irregular:
             report.resampled_segments += 1
             # Interpolate onto an internal uniform grid, filter, then map back.
             # The stored time axis and sample count stay exactly unchanged.
@@ -467,7 +465,7 @@ def _write_denoised_parquet(path: Path, acquisition: Acquisition) -> None:
         import pyarrow.parquet as pq
     except ImportError as error:  # pragma: no cover - depends on the environment
         raise ValueError(
-            "writing parquet requires pyarrow; install emg-eeg-denoise[parquet]"
+            "writing parquet requires pyarrow; install emg-denoise[parquet]"
         ) from error
 
     arrays: dict[str, Any] = {}
@@ -522,7 +520,7 @@ def _write_mask_parquet(
         import pyarrow.parquet as pq
     except ImportError as error:  # pragma: no cover
         raise ValueError(
-            "writing parquet requires pyarrow; install emg-eeg-denoise[parquet]"
+            "writing parquet requires pyarrow; install emg-denoise[parquet]"
         ) from error
 
     arrays: dict[str, Any] = {

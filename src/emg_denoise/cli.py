@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from .dsp.filters import Modality, infer_modality, modality_preset
+from .dsp.filters import FS, Modality, modality_preset
 from .io import jsonable
 from .pipeline.batch import BatchOptions, run_batch
 from .pipeline.meta import backfill_session_meta
@@ -21,7 +21,7 @@ from .qc.report import format_summary
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI without performing I/O or configuring application state."""
-    parser = argparse.ArgumentParser(description="EMG/EEG 时基重建与去噪（文件默认离线 filtfilt）")
+    parser = argparse.ArgumentParser(description="EMG 时基重建与去噪（文件默认离线 filtfilt）")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--json",
@@ -54,11 +54,11 @@ def build_parser() -> argparse.ArgumentParser:
     retime.add_argument("--force", action="store_true", help="就地重建时允许已有*.bak存在")
     retime.add_argument(
         "--modality",
-        choices=("emg", "eeg", "auto"),
-        default="auto",
-        help="决定默认采样率；auto 从文件名推断（含 eeg → 250 Hz 默认，否则 2000 Hz；可用 --rate 覆盖）",
+        choices=("emg",),
+        default="emg",
+        help="仅支持 EMG（2000 Hz；可用 --rate 覆盖）",
     )
-    retime.add_argument("--rate", type=float, help="真实采样率Hz；覆盖 modality 默认值")
+    retime.add_argument("--rate", type=float, help="真实采样率Hz；默认 2000")
     retime.add_argument(
         "--method",
         choices=("anchor_interpolation", "uniform"),
@@ -83,11 +83,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     batch.add_argument(
         "--modality",
-        choices=("emg", "eeg", "auto"),
-        default="auto",
-        help="去噪链路与默认采样率；auto 时按每个文件名分别推断",
+        choices=("emg",),
+        default="emg",
+        help="仅支持 EMG",
     )
-    batch.add_argument("--rate", type=float, help="真实采样率Hz；覆盖 modality 默认值")
+    batch.add_argument("--rate", type=float, help="真实采样率Hz；默认 2000")
     batch.add_argument("--tick-us", type=float, help="时钟分辨率us；默认逐文件估计")
     batch.add_argument(
         "--allow-negative", action="store_true", help="仅 uniform 模式：不平移首点至零"
@@ -132,14 +132,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     replay.add_argument(
         "--modality",
-        choices=("emg", "eeg", "auto"),
-        default="auto",
-        help="emg=20/450/梳状50；eeg=0.5/50/陷波50；auto 从文件名推断",
+        choices=("emg",),
+        default="emg",
+        help="EMG：高通 20 Hz、低通 450 Hz、梳状 50 Hz",
     )
     replay.add_argument(
         "--rate",
         type=float,
-        help="真实采样率Hz；默认读 meta/info.json fps，否则测时间戳；EEG 预设 250，Neuroscan 常用 1000",
+        help="真实采样率Hz；默认读 meta/info.json fps，否则测时间戳，再否则 2000",
     )
     replay.add_argument(
         "--causal",
@@ -159,12 +159,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _resolve_modality(flag: str, path: Path) -> Modality:
-    return infer_modality(path) if flag == "auto" else flag  # type: ignore[return-value]
+def _resolve_modality(flag: str) -> Modality:
+    return modality_preset(flag).modality
 
 
-def _default_rate(modality: Modality) -> float:
-    return float(modality_preset(modality).sample_rate)
+def _default_rate() -> float:
+    return float(FS)
 
 
 def _short_path(path: str | Path, root: str | None = None) -> str:
@@ -186,7 +186,7 @@ def _format_batch(payload: dict[str, Any]) -> str:
             f"samples={payload['total_samples']}"
         ),
         (
-            f"  modality={payload.get('modality', 'auto')}  "
+            f"  modality={payload.get('modality', 'emg')}  "
             f"inplace={payload.get('inplace', False)}  "
             f"denoise={payload.get('denoised', False)}"
         ),
@@ -316,12 +316,12 @@ def _execute(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     if args.command == "retime":
         if not args.inplace and args.output is None:
             raise ValueError("--output is required unless --inplace is set")
-        modality = _resolve_modality(args.modality, args.input)
-        rate = _default_rate(modality) if args.rate is None else args.rate
+        modality = _resolve_modality(args.modality)
+        rate = _default_rate() if args.rate is None else args.rate
         payload = run_retime(
             RetimeOptions(
                 source=args.input,
-                method=args.method or ("anchor_interpolation" if modality == "emg" else "uniform"),
+                method=args.method or "anchor_interpolation",
                 output=args.output,
                 rate_hz=rate,
                 tick_us=args.tick_us,
@@ -338,7 +338,7 @@ def _execute(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     if args.command == "batch":
         if not args.inplace and args.output_dir is None:
             raise ValueError("--output-dir is required unless --inplace is set")
-        batch_modality: Modality | None = None if args.modality == "auto" else args.modality
+        batch_modality = _resolve_modality(args.modality)
         payload = run_batch(
             BatchOptions(
                 patterns=tuple(args.inputs),
@@ -363,7 +363,7 @@ def _execute(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             for session in args.sessions
         ]
         return {"sessions": results, "count": len(results)}, 0
-    process_modality = _resolve_modality(args.modality, args.input)
+    process_modality = _resolve_modality(args.modality)
     output = args.output if args.output is not None else default_process_output(args.input)
     return run_replay(
         ReplayOptions(

@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from emg_eeg_denoise import DenoiserConfig, RealtimeDenoiser
-from emg_eeg_denoise.dsp.filters import CausalFilterBank, IIRComb, sample_matrix
+from emg_denoise import DenoiserConfig, RealtimeDenoiser
+from emg_denoise.dsp.filters import CausalFilterBank, IIRComb, sample_matrix
 
 
 def collect(engine, x, t, sizes=(20,)):
@@ -28,20 +28,6 @@ def test_timestamps_units_validity_and_partial_tail():
     np.testing.assert_array_equal(np.concatenate([b.valid for b in out]), np.arange(len(x)) >= 2000)
     assert all(b.observed_end_to_end_ms is None for b in out)
     assert out[0].discontinuity and sum(b.discontinuity for b in out) == 1
-
-
-def test_eeg_stream_uses_250hz_warmup_and_matches_bank():
-    x = np.random.default_rng(9).normal(size=(803, 2))
-    t = np.arange(len(x)) / 250
-    engine = RealtimeDenoiser(DenoiserConfig(channels=2, modality="eeg"))
-    out = collect(engine, x, t, (7, 10, 3))
-    np.testing.assert_array_equal(np.concatenate([b.timestamps for b in out]), t)
-    np.testing.assert_allclose(
-        np.concatenate([b.samples for b in out]),
-        CausalFilterBank(2, modality="eeg").process(x),
-        atol=1e-17,
-    )
-    np.testing.assert_array_equal(np.concatenate([b.valid for b in out]), np.arange(len(x)) >= 250)
 
 
 def test_gap_resets_all_filter_state_and_warmup():
@@ -91,7 +77,7 @@ def test_session_config_is_read_only_and_empty_inputs_have_defined_behavior():
     engine = RealtimeDenoiser()
     with pytest.raises(AttributeError):
         engine.config = DenoiserConfig(channels=2)
-    with pytest.raises(ValueError, match="emg|eeg"):
+    with pytest.raises(ValueError, match="emg"):
         DenoiserConfig(modality="ecg")  # type: ignore[arg-type]
     assert engine.process(np.empty((0, 1)), []) == []
     with pytest.raises(ValueError, match="one timestamp"):

@@ -1,7 +1,10 @@
-"""Offline zero-phase denoise matching ``viz/viewer.html`` (not the causal stream).
+"""Offline zero-phase file denoise (not the causal stream).
 
-EMG: mirror-pad → sosfiltfilt(bandpass) → unpad → period-pad comb filtfilt →
-edge fade. EEG: same bandpass path, then period-pad notch filtfilt → edge fade.
+Mirror-pad → sosfiltfilt(20 Hz highpass + 450 Hz lowpass) → unpad →
+repair periodic edges → period-pad → comb filtfilt → unpad → edge fade.
+
+Channel DC is not removed here. The viewer DC checkbox only affects display
+and the spectrum.
 """
 
 from __future__ import annotations
@@ -15,12 +18,8 @@ from scipy import signal
 from .._typing import FloatArray
 from .filters import (
     COMB_BANDWIDTH,
-    EEG_NOTCH_HZ,
-    EEG_NOTCH_Q,
     Modality,
     comb_coefficients,
-    eeg_bandpass_sos,
-    eeg_notch_ba,
     emg_bandpass_sos,
     resolved_preset,
     sample_matrix,
@@ -96,15 +95,10 @@ def repair_periodic_edges(samples: FloatArray, fs: float, f0: float) -> FloatArr
         z = np.asarray(x[:, channel], dtype=np.float64).copy()
 
         def mis(i: int, series: FloatArray = z) -> float:
-            return float(
-                np.max(np.abs(series[i : i + delay] - series[i + delay : i + 2 * delay]))
-            )
+            return float(np.max(np.abs(series[i : i + delay] - series[i + delay : i + 2 * delay])))
 
         mid = n // 2
-        refs = [
-            mis(i)
-            for i in range(mid, min(mid + int(round(fs)), n - 2 * delay), delay)
-        ]
+        refs = [mis(i) for i in range(mid, min(mid + int(round(fs)), n - 2 * delay), delay)]
         ref = _median(refs) + 1e-9
         peak = _percentile_abs(z, mid, min(n, mid + int(round(fs))), 0.99) + 1e-9
         thr = max(8 * ref, 0.08 * peak)
@@ -218,40 +212,22 @@ def offline_denoise(
         return x.copy(), {"stages": stages, "method": "offline_filtfilt", "fs": fs}
 
     padded, used_mirror = mirror_pad(x)
-    if preset.modality == "emg":
-        sos = emg_bandpass_sos(int(round(fs)))
-        stages.extend(["高通2@20Hz", "低通4@450Hz"])
-        y = signal.sosfiltfilt(sos, padded, axis=0)
-    else:
-        sos = eeg_bandpass_sos(int(round(fs)))
-        stages.extend(["高通2@0.5Hz", "低通4@50Hz"])
-        y = signal.sosfiltfilt(sos, padded, axis=0)
+    sos = emg_bandpass_sos(int(round(fs)))
+    stages.extend(["高通2@20Hz", "低通4@450Hz"])
+    y = signal.sosfiltfilt(sos, padded, axis=0)
     y = mirror_unpad(y, n) if used_mirror else np.asarray(y, dtype=np.float64)
 
-    if preset.modality == "emg":
-        y = repair_periodic_edges(y, fs, COMB_F0_HZ)
-        padded_comb, npre = _period_pad(y, fs, COMB_F0_HZ)
-        b, a = comb_coefficients()
-        if npre > 0:
-            filtered = signal.filtfilt(b, a, padded_comb, axis=0)
-            y = np.asarray(filtered[npre : npre + n], dtype=np.float64)
-        else:
-            y = np.asarray(signal.filtfilt(b, a, y, axis=0), dtype=np.float64)
-        y = fade_edge_ring(y, fs)
-        stages.append(f"梳状{COMB_F0_HZ:g}/{COMB_BANDWIDTH:g}Hz")
-        note_bits = ["镜像padding", "filtfilt", "梳状周期延拓", "端点消振"]
+    y = repair_periodic_edges(y, fs, COMB_F0_HZ)
+    padded_comb, npre = _period_pad(y, fs, COMB_F0_HZ)
+    b, a = comb_coefficients()
+    if npre > 0:
+        filtered = signal.filtfilt(b, a, padded_comb, axis=0)
+        y = np.asarray(filtered[npre : npre + n], dtype=np.float64)
     else:
-        y = repair_periodic_edges(y, fs, EEG_NOTCH_HZ)
-        padded_notch, npre = _period_pad(y, fs, EEG_NOTCH_HZ)
-        b, a = eeg_notch_ba(int(round(fs)))
-        if npre > 0:
-            filtered = signal.filtfilt(b, a, padded_notch, axis=0)
-            y = np.asarray(filtered[npre : npre + n], dtype=np.float64)
-        else:
-            y = np.asarray(signal.filtfilt(b, a, y, axis=0), dtype=np.float64)
-        y = fade_edge_ring(y, fs)
-        stages.append(f"陷波{EEG_NOTCH_HZ:g}/Q{EEG_NOTCH_Q:g}")
-        note_bits = ["镜像padding", "filtfilt", "陷波周期延拓", "端点消振"]
+        y = np.asarray(signal.filtfilt(b, a, y, axis=0), dtype=np.float64)
+    y = fade_edge_ring(y, fs)
+    stages.append(f"梳状{COMB_F0_HZ:g}/{COMB_BANDWIDTH:g}Hz")
+    note_bits = ["镜像padding", "filtfilt", "梳状周期延拓", "端点消振"]
 
     diagnostics = {
         "method": "offline_filtfilt",

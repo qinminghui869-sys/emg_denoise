@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..dsp.filters import Modality, infer_modality, modality_preset
+from ..dsp.filters import FS, Modality, modality_preset
 from ..io import dump_json
 from .replay import ReplayOptions, default_process_output, run_replay
 from .retime import RetimeOptions, run_retime
@@ -48,7 +48,7 @@ class BatchOptions:
     non_negative: bool = True
     #: Also run stage two on each retimed recording.
     denoise: bool = False
-    #: Fixed modality for every file; None infers per path (``eeg`` in name → EEG).
+    #: Kept for call sites that pass ``emg``. Only EMG is supported.
     modality: Modality | None = None
     #: Overwrite outputs that already exist instead of refusing.
     force: bool = False
@@ -115,20 +115,22 @@ def destination(source: Path, root: Path, output_dir: Path) -> Path:
     return output_dir / relative / source.stem
 
 
-def _modality_for(source: Path, options: BatchOptions) -> Modality:
-    return options.modality if options.modality is not None else infer_modality(source)
+def _modality_for(options: BatchOptions) -> Modality:
+    if options.modality is None:
+        return "emg"
+    return modality_preset(options.modality).modality
 
 
-def _rate_for(source: Path, options: BatchOptions) -> float:
+def _rate_for(options: BatchOptions) -> float:
     if options.rate_hz is not None:
         return float(options.rate_hz)
-    return float(modality_preset(_modality_for(source, options)).sample_rate)
+    return float(FS)
 
 
 def _process_one_mirrored(source: Path, target: Path, options: BatchOptions) -> dict[str, Any]:
     """Run stage one, and stage two when requested, into a mirrored output directory."""
     assert options.output_dir is not None
-    modality = _modality_for(source, options)
+    modality = _modality_for(options)
     retimed_name = (
         "retimed.parquet" if source.suffix.lower() in {".parquet", ".pq"} else "retimed.csv"
     )
@@ -139,10 +141,10 @@ def _process_one_mirrored(source: Path, target: Path, options: BatchOptions) -> 
 
     stage_one = run_retime(
         RetimeOptions(
-            method="anchor_interpolation" if modality == "emg" else "uniform",
+            method="anchor_interpolation",
             source=source,
             output=retimed,
-            rate_hz=_rate_for(source, options),
+            rate_hz=_rate_for(options),
             tick_us=options.tick_us,
             non_negative=options.non_negative,
             force=options.force,
@@ -199,13 +201,13 @@ def _process_one_mirrored(source: Path, target: Path, options: BatchOptions) -> 
 
 def _process_one_inplace(source: Path, options: BatchOptions) -> dict[str, Any]:
     """Rebuild one parquet under its own path; optionally denoise beside it."""
-    modality = _modality_for(source, options)
+    modality = _modality_for(options)
     stage_one = run_retime(
         RetimeOptions(
-            method="anchor_interpolation" if modality == "emg" else "uniform",
+            method="anchor_interpolation",
             source=source,
             inplace=True,
-            rate_hz=_rate_for(source, options),
+            rate_hz=_rate_for(options),
             tick_us=options.tick_us,
             non_negative=options.non_negative,
             force=options.force,
@@ -292,7 +294,7 @@ def run_batch(options: BatchOptions) -> dict[str, Any]:
         "flagged": len(flagged),
         "total_samples": sum(int(entry["samples"]) for entry in processed),
         "denoised": options.denoise,
-        "modality": options.modality or "auto",
+        "modality": options.modality or "emg",
         "inplace": options.inplace,
         "recordings": processed,
         "failures": failed,

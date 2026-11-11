@@ -20,11 +20,11 @@ from .filters import (
 
 @dataclass(frozen=True, slots=True)
 class DenoiserConfig:
-    """Immutable session configuration for the EMG or EEG causal chain."""
+    """Immutable session configuration for the EMG causal chain."""
 
     channels: int = 1
     modality: Modality = "emg"
-    #: Override the modality default (e.g. Neuroscan EEG at 1000 Hz).
+    #: Override the 2000 Hz default. The comb delay is fixed, so the rate must stay near 2 kHz.
     sample_rate_hz: int | None = None
 
     def __post_init__(self) -> None:
@@ -64,10 +64,10 @@ class DenoisedBlock:
 
 
 class RealtimeDenoiser:
-    """Causal streaming denoiser for EMG (2 kHz) or EEG (default 250 Hz).
+    """Causal streaming denoiser for EMG at 2 kHz.
 
     process() accepts any positive sample count and internally consumes at most
-    one hop (EMG 20 samples / EEG 10 samples at the default rates) at a time.
+    one hop (20 samples at 2000 Hz) at a time.
     A forward timestamp gap resets state and warmup. Backward/repeated time is
     rejected; call reset() before restarting a device's timestamp clock.
     """

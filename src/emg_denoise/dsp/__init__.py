@@ -1,13 +1,11 @@
-"""Causal DSP: EMG/EEG filter banks and the streaming denoiser."""
+"""EMG DSP: fixed filters, offline zero-phase denoise, and the causal stream."""
 
 from .core import DenoisedBlock, DenoiserConfig, RealtimeDenoiser
 from .filters import (
     CausalFilterBank,
     IIRComb,
-    IIRNotch,
     Modality,
     ModalityPreset,
-    infer_modality,
     modality_preset,
 )
 from .offline import offline_denoise
@@ -18,10 +16,8 @@ __all__ = [
     "RealtimeDenoiser",
     "CausalFilterBank",
     "IIRComb",
-    "IIRNotch",
     "Modality",
     "ModalityPreset",
-    "infer_modality",
     "modality_preset",
     "offline_denoise",
 ]

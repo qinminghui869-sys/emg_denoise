@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "emg-eeg-denoise"
-version = "0.2.0"
-description = "EMG/EEG timestamp rebuild and causal denoising (comb/notch)"
+name = "emg-denoise"
+version = "0.3.0"
+description = "EMG timestamp rebuild and offline zero-phase denoising, with a causal streaming API"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.26,<3", "scipy>=1.11,<2"]
@@ -22,8 +22,8 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/qinminghui869-sys/emg-eeg-denoise"
-Issues = "https://github.com/qinminghui869-sys/emg-eeg-denoise/issues"
+Repository = "https://github.com/qinminghui869-sys/emg_denoise"
+Issues = "https://github.com/qinminghui869-sys/emg_denoise/issues"
 
 [project.optional-dependencies]
 parquet = ["pyarrow>=14,<25"]
@@ -39,15 +39,15 @@ dev = [
 ]
 
 [project.scripts]
-emg-eeg-denoise = "emg_eeg_denoise.cli:main"
+emg-denoise = "emg_denoise.cli:main"
 # Short alias
-eed = "emg_eeg_denoise.cli:main"
+eed = "emg_denoise.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-emg_eeg_denoise = ["py.typed"]
+emg_denoise = ["py.typed"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -65,7 +65,7 @@ ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["src/emg_eeg_denoise"]
+files = ["src/emg_denoise"]
 strict = true
 
 [[tool.mypy.overrides]]
@@ -74,7 +74,7 @@ ignore_missing_imports = true
 
 [tool.coverage.run]
 branch = true
-source = ["emg_eeg_denoise"]
+source = ["emg_denoise"]
 
 [tool.coverage.report]
 show_missing = true

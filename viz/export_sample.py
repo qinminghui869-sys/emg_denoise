@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Export L3 wrist EMG parquet into compact JSON for viewer.html."""
+"""Export one episode's wrist EMG parquet into compact JSON for viewer.html.
+
+Requires the parquet extra: ``python -m pip install -e '.[parquet]'``.
+Pass the session directory with ``--src``. The JSON records the session name, not a local path.
+"""
 
 from __future__ import annotations
 
@@ -9,26 +13,26 @@ import json
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
-
-DEFAULT_SRC = Path(
-    "/home/baai/qmh/dataset/L3/L3_128_data/L3-001-2026-10-09-15-45-54"
-)
-DEFAULT_OUT = Path(__file__).resolve().parent / "data" / "sample_emg.json"
 
 
 def _enc_f32(arr: np.ndarray) -> str:
-    return base64.b64encode(np.ascontiguousarray(arr, dtype=np.float32).tobytes()).decode(
-        "ascii"
-    )
+    raw = np.ascontiguousarray(arr, dtype=np.float32).tobytes()
+    return base64.b64encode(raw).decode("ascii")
 
 
 def _load_side(episode_dir: Path, name: str, decim: int) -> tuple[np.ndarray, np.ndarray]:
-    df = pd.read_parquet(episode_dir / name)
-    cols = [f"dim_{i}" for i in range(8)]
-    t = df["timestamp"].to_numpy(dtype=np.float64)[::decim]
-    x = df[cols].to_numpy(dtype=np.float32)[::decim]
-    return t, x
+    try:
+        import pyarrow.parquet as pq
+    except ImportError as error:
+        raise RuntimeError("reading parquet requires emg-denoise[parquet]") from error
+
+    columns = ["timestamp", *[f"dim_{i}" for i in range(8)]]
+    table = pq.read_table(episode_dir / name, columns=columns)
+    timestamps = np.asarray(table.column("timestamp").to_numpy(), dtype=np.float64)
+    channels = np.column_stack(
+        [np.asarray(table.column(f"dim_{i}").to_numpy(), dtype=np.float32) for i in range(8)]
+    )
+    return timestamps[::decim], channels[::decim]
 
 
 def export(src: Path, out: Path, *, original_fs: float, target_fs: float) -> Path:
@@ -39,37 +43,36 @@ def export(src: Path, out: Path, *, original_fs: float, target_fs: float) -> Pat
     decim = max(1, int(round(original_fs / target_fs)))
     effective_fs = original_fs / decim
 
-    lt, lx = _load_side(episode_dir, "observation.left_wrist_emg.parquet", decim)
-    rt, rx = _load_side(episode_dir, "observation.right_wrist_emg.parquet", decim)
-    n = min(len(lt), len(rt))
-    lt, lx, rt, rx = lt[:n], lx[:n], rt[:n], rx[:n]
-    t0 = float(min(lt[0], rt[0]))
-    t_rel = (lt - t0).astype(np.float32)
+    left_t, left_x = _load_side(episode_dir, "observation.left_wrist_emg.parquet", decim)
+    right_t, right_x = _load_side(episode_dir, "observation.right_wrist_emg.parquet", decim)
+    count = min(len(left_t), len(right_t))
+    left_t, left_x = left_t[:count], left_x[:count]
+    right_t, right_x = right_t[:count], right_x[:count]
+    origin = float(min(left_t[0], right_t[0]))
+    relative = (left_t - origin).astype(np.float32)
+
+    def side(prefix: str, values: np.ndarray) -> dict[str, object]:
+        return {
+            "names": [f"{prefix}{i}" for i in range(8)],
+            "channels": [_enc_f32(values[:, i]) for i in range(8)],
+            "mean": values.mean(axis=0).astype(float).tolist(),
+            "std": values.std(axis=0).astype(float).tolist(),
+        }
 
     payload = {
         "source": f"{src.name} / episode_000000",
-        "source_path": str(src.resolve()),
+        "source_path": src.name,
         "original_fs_hz": float(original_fs),
         "fs_hz": float(effective_fs),
-        "n_samples": int(n),
-        "duration_s": float(t_rel[-1] - t_rel[0]),
+        "n_samples": int(count),
+        "duration_s": float(relative[-1] - relative[0]),
         "unit": "ADC counts",
         "dtype": "float32",
         "encoding": "base64",
-        "t0_s": t0,
-        "time": _enc_f32(t_rel),
-        "left": {
-            "names": [f"L{i}" for i in range(8)],
-            "channels": [_enc_f32(lx[:, i]) for i in range(8)],
-            "mean": lx.mean(axis=0).astype(float).tolist(),
-            "std": lx.std(axis=0).astype(float).tolist(),
-        },
-        "right": {
-            "names": [f"R{i}" for i in range(8)],
-            "channels": [_enc_f32(rx[:, i]) for i in range(8)],
-            "mean": rx.mean(axis=0).astype(float).tolist(),
-            "std": rx.std(axis=0).astype(float).tolist(),
-        },
+        "t0_s": origin,
+        "time": _enc_f32(relative),
+        "left": side("L", left_x),
+        "right": side("R", right_x),
     }
 
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -79,8 +82,12 @@ def export(src: Path, out: Path, *, original_fs: float, target_fs: float) -> Pat
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--src", type=Path, default=DEFAULT_SRC)
-    parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    parser.add_argument("--src", type=Path, required=True, help="LeRobot session directory")
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path(__file__).resolve().parent / "data" / "sample_emg.json",
+    )
     parser.add_argument("--original-fs", type=float, default=2000.0)
     parser.add_argument(
         "--target-fs",
@@ -89,14 +96,8 @@ def main() -> None:
         help="Decimated rate for the viewer (1000 Hz keeps 450 Hz lowpass usable)",
     )
     args = parser.parse_args()
-    path = export(
-        args.src,
-        args.out,
-        original_fs=args.original_fs,
-        target_fs=args.target_fs,
-    )
-    size_kb = path.stat().st_size / 1024
-    print(f"wrote {path} ({size_kb:.1f} KiB)")
+    path = export(args.src, args.out, original_fs=args.original_fs, target_fs=args.target_fs)
+    print(f"wrote {path} ({path.stat().st_size / 1024:.1f} KiB)")
 
 
 if __name__ == "__main__":

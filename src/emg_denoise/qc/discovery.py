@@ -45,7 +45,7 @@ def read_columns(path: Path) -> dict[str, Any]:
         try:
             import pyarrow.parquet as pq
         except ImportError as error:
-            raise ValueError("reading parquet requires emg-eeg-denoise[parquet]") from error
+            raise ValueError("reading parquet requires emg-denoise[parquet]") from error
         table: Any = pq.read_table(path)  # type: ignore[no-untyped-call]
         if len(set(table.column_names)) != len(table.column_names):
             raise ValueError("duplicate column names")

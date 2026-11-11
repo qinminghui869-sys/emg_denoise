@@ -1,6 +1,8 @@
 # MF-LeRobot 兼容性核查与 QC 脚本方案
 
-核查日期：2026-11-06。样例：`/home/baai/qmh/dataset/L3/neuroscan/L3-001-2026-10-09-17-53-45/`。
+核查日期：2026-11-06。样例会话：`L3-001-2026-10-09-17-53-45`。
+
+> 本文是当时的只读核查记录，不是现行设计说明。2026-11-11 起，包名为 `emg-denoise`，EEG 去噪已移除，文件名含 `eeg` 的记录会被拒绝。信号 parquet 不再写入 `valid` / `segment_id`；下文「读成 10 通道」描述的是核查当时的导出，不是现行契约。建议中的 0.5/50 Hz EEG 链和 250 Hz EEG 采样率也不再对应代码。
 
 本次只读核查样例和代码，不修改数据、不重跑就地处理。下述 `eed qc` 是拟议接口，尚未实现。结论只适用于已检查样例及代码路径，不代表全部 L3 数据。
 
@@ -30,7 +32,7 @@
 
 ### 阻断：去噪结果从 8 通道读成 10 通道
 
-`src/emg_eeg_denoise/pipeline/replay.py` 的 `_write_denoised_parquet` 把 `valid`、`segment_id` 写进同一个特征 parquet；`pipeline/meta.py` 保持 shape=[8]。
+`src/emg_denoise/pipeline/replay.py` 的 `_write_denoised_parquet` 把 `valid`、`segment_id` 写进同一个特征 parquet；`pipeline/meta.py` 保持 shape=[8]。
 
 目标 `ParquetFeature.load()` 只排除 timestamp、episode_index，其余列全部拼成信号。故实际选列为 dim_0…dim_7、valid、segment_id，总计 10 列，且掩码被转成 float32。该行为已通过文件 schema 与本机/在线上游代码共同确认；本次环境无 torch，未运行完整 Dataset 解码测试，不能将代码级复核描述成端到端运行通过。
 

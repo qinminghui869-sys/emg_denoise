@@ -1,4 +1,4 @@
-"""Offline pipeline: timestamp rebuild, CSV replay, and batch orchestration."""
+"""Offline pipeline: timestamp rebuild, file denoise, and batch orchestration."""
 
 from .batch import BatchOptions, run_batch
 from .meta import backfill_session_meta, register_recording_meta

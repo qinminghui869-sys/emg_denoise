@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from emg_eeg_denoise.cli import main
+from emg_denoise.cli import main
 
 
 def write_csv(path, t, x, header="timestamp,emg1"):
@@ -37,58 +37,11 @@ def test_csv_stream_preserves_epoch_time_partial_tail_gap_and_reports(tmp_path):
     assert report["observed_end_to_end_ms"] is None
 
 
-def test_eeg_process_uses_eeg_chain(tmp_path):
-    t = np.arange(800) / 250
-    x = np.sin(2 * np.pi * 50 * t)
+def test_eeg_filename_is_rejected(tmp_path):
     source, output = tmp_path / "observation.eeg.csv", tmp_path / "out.csv"
-    write_csv(source, t, x, header="timestamp,Fp1")
-    assert (
-        main(
-            [
-                "process",
-                "--sidecar",
-                "--json",
-                str(source),
-                "--output",
-                str(output),
-                "--modality",
-                "auto",
-            ]
-        )
-        == 0
-    )
-    report = json.loads(Path(str(output) + ".report.json").read_text())
-    assert report["modality"] == "eeg"
-    assert report["sample_rate_hz"] == 250
-    assert report["input_samples"] == report["output_samples"] == 800
-
-
-def test_eeg_process_accepts_neuroscan_1000hz(tmp_path):
-    t = np.arange(2000) / 1000.0
-    x = np.sin(2 * np.pi * 50 * t)
-    source, output = tmp_path / "observation.eeg.csv", tmp_path / "out.csv"
-    write_csv(source, t, x, header="timestamp,Fp1")
-    assert (
-        main(
-            [
-                "process",
-                "--sidecar",
-                "--json",
-                "--rate",
-                "1000",
-                str(source),
-                "--output",
-                str(output),
-                "--modality",
-                "eeg",
-            ]
-        )
-        == 0
-    )
-    report = json.loads(Path(str(output) + ".report.json").read_text())
-    assert report["sample_rate_hz"] == 1000
-    assert report["segments"] == 1
-    assert report["input_samples"] == report["output_samples"] == 2000
+    write_csv(source, np.arange(100) / 2000, np.zeros(100))
+    assert main(["process", str(source), "--output", str(output)]) == 2
+    assert not output.exists()
 
 
 def test_csv_does_not_overwrite_input(tmp_path):
@@ -136,7 +89,7 @@ def test_python_module_entrypoint_uses_the_same_cli(tmp_path, monkeypatch):
         sys,
         "argv",
         [
-            "emg-eeg-denoise",
+            "emg-denoise",
             "process",
             str(tmp_path / "missing.csv"),
             "--output",
@@ -144,5 +97,5 @@ def test_python_module_entrypoint_uses_the_same_cli(tmp_path, monkeypatch):
         ],
     )
     with pytest.raises(SystemExit) as result:
-        runpy.run_module("emg_eeg_denoise", run_name="__main__")
+        runpy.run_module("emg_denoise", run_name="__main__")
     assert result.value.code == 2

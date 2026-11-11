@@ -11,14 +11,14 @@ import numpy as np
 
 from ..io import dump_json
 
-TOOL_NAME = "emg-eeg-denoise"
+TOOL_NAME = "emg-denoise"
 
 
 def tool_version() -> str:
     try:
-        return version("emg-eeg-denoise")
+        return version("emg-denoise")
     except PackageNotFoundError:  # pragma: no cover - editable / source tree
-        return "0.2.0"
+        return "0.3.0"
 
 
 def find_session_root(path: str | Path) -> Path | None:

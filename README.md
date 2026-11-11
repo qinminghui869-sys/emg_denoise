@@ -1,15 +1,16 @@
-# emg-eeg-denoise
+# emg-denoise
 
-EMG / EEG 时基重建与因果去噪工具，以及浏览器对照页。
+[![CI](https://github.com/qinminghui869-sys/emg_denoise/actions/workflows/ci.yml/badge.svg)](https://github.com/qinminghui869-sys/emg_denoise/actions/workflows/ci.yml)
 
-**四项能力**
+EMG 时基重建与去噪工具，以及浏览器对照页。当前版本 0.3.0。文件去噪默认离线零相位；`RealtimeDenoiser` 仍为因果流式。
+
+**三项能力**
 
 1. EMG 时间戳重建（tick 量化 → 双锚点分段插值）
 2. EMG 去噪：高通 20 Hz → 低通 450 Hz → 梳状 50 Hz（−3 dB 带宽 2 Hz，Q=25）
-3. EEG 去噪：高通 0.5 Hz → 低通 50 Hz → 陷波 50 Hz（Q=25，带宽 2 Hz）
-4. 可视化：EMG & EEG Viewer
+3. 可视化：EMG Viewer
 
-> 本仓库不含采集驱动。文件 `process` 与浏览页同为离线 filtfilt；`RealtimeDenoiser` 为因果流式。本机回放不能证明端到端延迟。
+> 本仓库不含采集驱动。文件 `process` 与浏览页 EMG 默认手动链路同为离线 filtfilt（镜像、双向 20/450 Hz、周期对齐、周期延拓、双向梳状、端点消振）。去直流只影响浏览页的显示和频谱，不写入去噪文件。`RealtimeDenoiser` 为因果流式。本机回放不能证明端到端延迟。
 
 [架构说明](docs/architecture.md) · [处理链路 DAG](dag.html) · [开发规范](CONTRIBUTING.md) · [变更记录](CHANGELOG.md)
 
@@ -20,13 +21,12 @@ EMG / EEG 时基重建与因果去噪工具，以及浏览器对照页。
 需要 Python ≥ 3.10。
 
 ```bash
-cd emg-eeg-denoise
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev]'   # 含 parquet / 测试 / lint
 ```
 
-CLI 入口：`emg-eeg-denoise`（短别名 `eed`）。若提示找不到命令，用：
+CLI 入口：`emg-denoise`（短别名 `eed`）。若提示找不到命令，用：
 
 ```bash
 .venv/bin/eed --help
@@ -37,38 +37,38 @@ CLI 入口：`emg-eeg-denoise`（短别名 `eed`）。若提示找不到命令�
 ## 仓库结构
 
 ```text
-emg-eeg-denoise/
-├── src/emg_eeg_denoise/
+emg_denoise/
+├── src/emg_denoise/
 │   ├── cli.py              # 命令行（可读摘要；--json 输出完整 JSON）
 │   ├── io.py               # CSV/JSON 校验与原子写入
 │   ├── dsp/                # 滤波与去噪
-│   │   ├── filters.py      # EMG 梳状 / EEG 陷波（因果积木）
-│   │   ├── offline.py      # Viewer 同款离线 filtfilt
+│   │   ├── filters.py      # EMG 带通与 50 Hz 梳状（因果积木）
+│   │   ├── offline.py      # 文件离线 filtfilt
 │   │   └── core.py         # RealtimeDenoiser（流式因果）
-│   └── pipeline/           # 离线两阶段流水线
-│       ├── timebase.py     # tick → 双锚点插值算法
-│       ├── retime.py       # 阶段一
-│       ├── replay.py       # 阶段二（默认 offline）
-│       ├── batch.py        # 批量编排
-│       └── meta.py         # 写入 / 回填 meta/info.json
+│   ├── pipeline/           # 离线两阶段流水线
+│   │   ├── timebase.py     # tick → 双锚点插值算法
+│   │   ├── retime.py       # 阶段一
+│   │   ├── replay.py       # 阶段二（默认 offline）
+│   │   ├── batch.py        # 批量编排
+│   │   └── meta.py         # 写入 / 回填 meta/info.json
+│   └── qc/                 # 只读质量检查
 ├── tests/
-├── viz/                    # EMG & EEG Viewer
-│   ├── viewer.html
-│   ├── parquet_loader.js
-│   └── data/
-└── docs/architecture.md
+├── viz/                    # 浏览页；experimental_emg.js 仅预览
+├── docs/                   # 架构说明与历史核查记录
+├── dag.html                # 处理链路图
+└── .github/workflows/ci.yml
 ```
 
 ---
 
 ## 处理链路
 
-| 模态 | 采样率 | 高通 | 低通 | 工频抑制 | 块长 / 预热 |
-|---|---:|---|---|---|---|
-| EMG | 2000 Hz | Butterworth 二阶 20 Hz | Butterworth 四阶 450 Hz | IIR 梳状 50 Hz，BW=2 Hz，Q=25 | 20 点 / 1 s |
-| EEG | 250 Hz | Butterworth 二阶 0.5 Hz | Butterworth 四阶 50 Hz | IIR 陷波 50 Hz，Q=25 | 10 点 / 1 s |
+| 路径 | 采样率 | 处理 |
+|---|---:|---|
+| `process` 默认 / 浏览页 EMG 手动默认 | 约 2000 Hz | 镜像 → 双向高通 20 Hz（二阶）→ 双向低通 450 Hz（四阶）→ 周期对齐 → 周期延拓 → 双向梳状 50 Hz（带宽 2 Hz，单向 Q=25）→ 端点消振 |
+| `--causal` / `RealtimeDenoiser` | 约 2000 Hz | 同一截止的因果高通、低通和梳状；建议块长 20 点，预热 1 s |
 
-`--modality emg|eeg|auto`（`auto` 时文件名含 `eeg` 则走 EEG）。
+文件名含 `eeg` 的记录会被拒绝。`--modality` 只接受 `emg`。
 
 **通用 CLI 选项**
 
@@ -87,16 +87,16 @@ emg-eeg-denoise/
 
 ```bash
 eed retime observation.left_wrist_emg.parquet --output retimed.parquet
-eed retime observation.eeg.parquet --inplace --modality eeg
+eed retime observation.left_wrist_emg.parquet --inplace
 ```
 
-EMG 默认 `--method anchor_interpolation`。**只改时间戳，信号值不变。**
+默认 `--method anchor_interpolation`。**只改时间戳，信号值不变。**
 
 - 相邻校正点之间固定两端时间，按两点间的样本数均分。校正点是约两个 tick 的跳变（容差 ±0.05 tick）。间距不固定，可以是 9、18 或其他数量。
 - 第一个校正点之前、最后一个校正点之后保持原时间戳。不足两个校正点时，整个文件保持原样。
 - 局部周期偏离标称超过 20%，或区间内出现超过三个标称周期的间隔时，该区间保持原样并告警。
 
-`--method uniform` 是旧的固定周期模式；`--allow-negative` 只对它生效。EEG 的命令行和批处理默认仍用 `uniform`。`--inplace`：源文件改名为 `*.bak`，重建后的时间轴写回原名。`--json` 与 `--sidecar` 列出校正点、已均分区间和跳过区间。
+`--method uniform` 是旧的固定周期模式；`--allow-negative` 只对它生效。`--inplace`：源文件改名为 `*.bak`，重建后的时间轴写回原名。`--json` 与 `--sidecar` 列出校正点、已均分区间和跳过区间。
 
 ---
 
@@ -104,10 +104,9 @@ EMG 默认 `--method anchor_interpolation`。**只改时间戳，信号值不变
 
 ```python
 import numpy as np
-from emg_eeg_denoise import DenoiserConfig, RealtimeDenoiser
+from emg_denoise import DenoiserConfig, RealtimeDenoiser
 
-emg = RealtimeDenoiser(DenoiserConfig(channels=2, modality="emg"))
-eeg = RealtimeDenoiser(DenoiserConfig(channels=8, modality="eeg"))
+emg = RealtimeDenoiser(DenoiserConfig(channels=2))
 
 for block in emg.process(np.zeros((20, 2)), np.arange(20) / 2000.0):
     waveform, ready = block.samples, block.valid
@@ -115,12 +114,8 @@ for block in emg.process(np.zeros((20, 2)), np.arange(20) / 2000.0):
 
 ```bash
 # parquet：默认在同目录写出 <stem>.denoised.parquet
-# 默认走与 Viewer 相同的离线链路（镜像 padding + filtfilt + 梳状/陷波周期延拓），减轻首尾振铃
+# 默认离线链路见下文；不去直流
 eed process observation.left_wrist_emg.parquet
-eed process observation.eeg.parquet --modality eeg
-
-# Neuroscan 等 1000 Hz EEG：用 --rate，或依赖 meta/info.json 的 feature.fps
-eed process observation.eeg.parquet --modality eeg --rate 1000
 
 # 需要流式因果结果时：
 eed process observation.left_wrist_emg.parquet --causal
@@ -129,7 +124,18 @@ eed process observation.left_wrist_emg.parquet --causal
 eed process retimed.csv --output denoised.csv
 ```
 
-离线 EMG 已适配上述时基：间隔超过三个标称周期时分段；段内时间戳不均匀时，先映到内部均匀网格上滤波，再映回原时间戳，样本数不变。短于 32 点的分段不滤波，计入 `unfiltered_samples` 并标记 invalid；走内部网格的段数记为 `resampled_segments`。`--causal` 仍要求均匀时基。
+默认离线链路按下面的顺序处理每个足够长的分段。文件结果不去直流；浏览页的「去直流」只减去显示和频谱里的通道均值，不代替 20 Hz 高通，也不写入去噪文件。
+
+1. **镜像延拓。** 整段偶对称反射后再滤波，然后裁回原长度，减轻边界不连续引起的瞬态。
+2. **20 Hz 二阶 Butterworth 高通。** 衰减低频基线漂移及部分运动伪迹，保留主要表面肌电。Butterworth 通带幅频响应最大平坦。
+3. **450 Hz 四阶 Butterworth 低通。** 衰减带外高频噪声，限定分析频带。它不能消除采样或降采样时已经产生的混叠。
+4. **双向滤波（`filtfilt`）。** 高通、低通和后面的梳状都先正向、再反向。内部区间合成响应为零相位。幅频响应是单向响应的平方，等效阶数加倍，截止频率处的衰减也随之增加。
+5. **周期对齐。** 比较相邻工频周期，把不像周期的端部改写成内侧干净周期。这一步直接改写边界样本，可能影响真实瞬态。
+6. **周期延拓。** 按 50 Hz 周期重复首尾片段，给梳状滤波提供边界数据，减轻初始化瞬态。效果取决于这些片段对周期性干扰的代表性。
+7. **50 Hz 梳状，带宽 2 Hz。** 在 50 Hz 及其整数倍附近形成周期性陷波。单向设计满足 Q = 50 / 2 = 25。双向处理后陷波进一步加深、加宽，并同时削弱对应频段内的真实肌电。
+8. **端点消振。** 若端部能量明显高于内部并逐渐衰减，就向内部反射交叉淡化。这是启发式处理，可能同时衰减真实的肌肉激活。
+
+间隔超过三个标称周期时分段。段内时间戳不均匀时，先映到内部均匀网格上滤波，再映回原时间戳，样本数不变。短于 32 点的分段不滤波，计入 `unfiltered_samples` 并标记 invalid；走内部网格的段数记为 `resampled_segments`。`--causal` 仍要求均匀时基，并且不做镜像、`filtfilt`、周期对齐、周期延拓和端点消振。
 
 输出信号列仅为 `timestamp` + 通道（parquet 另保留 `episode_index` 等元数据）；**不含** `valid`/`segment_id`，以免上游按列数读成多出的伪通道。逐样本掩码仅在 `--sidecar` 时写入旁路 `*.mask.parquet`。采样率优先 `--rate`，否则读 `meta/info.json` 的 `fps`，再否则测时间戳。去噪后会写入 `episodes_stats.jsonl` 的派生特征统计。文件去噪默认 **离线零相位**；Python `RealtimeDenoiser` API 仍为因果流式。
 
@@ -195,8 +201,8 @@ eed meta-backfill /path/to/L3-002-2026-10-19-17-49-37
 
 | 规则 | 说明 |
 |---|---|
-| 采样 | EMG 2000 Hz；EEG 默认 250 Hz（可经 `sample_rate_hz` / `--rate` 覆盖，如 1000 Hz）；单次调用不可跨缺样区 |
-| 分块 | EMG 建议 20 点；EEG 默认 10 点（随采样率同比缩放）；更长输入内部按块切分 |
+| 采样 | 2000 Hz（可经 `sample_rate_hz` / `--rate` 覆盖，须仍接近 2 kHz）；单次调用不可跨缺样区 |
+| 分块 | 建议 20 点；更长输入内部按块切分 |
 | 断流 | 向前时间跳变重置状态并开新分段；倒退/重复拒绝 |
 | 预热 | 启动/重置后前 1 s 标记 `valid=False`，滤波仍持续 |
 | 无效输入 | 在状态更新前拒绝，避免 NaN 污染 |
@@ -210,7 +216,6 @@ eed meta-backfill /path/to/L3-002-2026-10-19-17-49-37
 页面：[`viz/viewer.html`](viz/viewer.html)。
 
 ```bash
-cd emg-eeg-denoise
 python3 -m http.server 8765 --directory viz
 # 浏览器打开 http://127.0.0.1:8765/viewer.html
 ```
@@ -223,11 +228,11 @@ python3 -m http.server 8765 --directory viz
 
 | 入口 | 行为 |
 |---|---|
-| 打开文件夹 | 自动读取左右腕 EMG；同目录有 `observation.eeg.parquet` 一并载入；也可选 `*.denoised.parquet` |
-| 打开 Parquet | 单文件或多选；按文件名区分 EMG / EEG |
+| 打开文件夹 | 自动读取左右腕 EMG；也可选 `*.denoised.parquet` |
+| 打开 Parquet | 单文件或多选腕部 EMG |
 | JSON/CSV | 示例 JSON 或带 `timestamp` 列的 CSV |
 
-EEG 默认：**高通 0.5 Hz、低通 50 Hz、陷波 50 Hz**。浏览滤波与默认 `process` 同为镜像 padding + filtfilt；与 `--causal` / `RealtimeDenoiser` 不同。
+浏览页 EMG 默认手动链路与上面的文件 `process` 相同。去直流只影响波形和频谱，不进入去噪文件。梳状的 filtfilt、周期对齐、周期延拓、端点消振，以及陷波的对应项，仍可单独关掉。实验 FIR 与 `--causal` / `RealtimeDenoiser` 不是这条链路。
 
 ---
 

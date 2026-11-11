@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>EMG & EEG Viewer</title>
+  <title>EMG Viewer</title>
   <style>
     :root {
       --bg: #0f1419;
@@ -154,7 +154,14 @@
     }
     .filter-panel .param.hidden,
     .filter-panel .param-row.hidden,
-    .filter-panel .notch-list.hidden { display: none !important; }
+    .filter-panel .notch-list.hidden,
+    .filter-panel .edge-opts.hidden { display: none !important; }
+    .edge-opts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 8px;
+    }
+    .edge-opts label { justify-content: flex-start; }
     .filter-panel .param input[type="range"] {
       width: 100%;
       grid-column: 1 / -1;
@@ -293,8 +300,8 @@
 <body>
   <header>
     <div>
-      <h1>EMG & EEG <span>Viewer</span></h1>
-      <div class="meta" id="sourceMeta">emg-eeg-denoise · 加载示例数据中…</div>
+      <h1>EMG <span>Viewer</span></h1>
+      <div class="meta" id="sourceMeta">emg-denoise · 加载示例数据中…</div>
     </div>
     <div class="controls">
       <label class="ctrl">视图
@@ -335,6 +342,9 @@
         <span>滤波</span>
         <button type="button" class="ghost" id="resetFilterBtn" title="恢复默认参数">默认</button>
       </h2>
+      <label class="ctrl" style="margin-bottom:8px"><input type="checkbox" id="experimentalEmg" /> 实验：原生采样＋自适应 FIR</label>
+      <div class="chain-hint" id="experimentalHint" hidden>独立于下方手动链路，仅约 2 kHz EMG。按原始样本序号计算，不插值信号；时间戳选项只控制横轴。最终带通 20–450 Hz，8,001 点自适应 FIR。阴影为首尾各 2 秒或短段无效区；统计/频谱仍包含阴影。短于 8 秒的片段保留原始信号并标无效。仅本页预览，不写文件。</div>
+      <details id="experimentalDetails" hidden><summary>实验方案诊断</summary><pre id="experimentalReport" style="white-space:pre-wrap;font-size:11px;line-height:1.6">尚未计算</pre></details>
       <div class="filter-panel" id="filterPanel">
         <div class="mode-pills" id="filterToggles" aria-label="滤波开关">
           <label><input type="checkbox" id="enRaw" />原始</label>
@@ -342,14 +352,14 @@
           <label><input type="checkbox" id="enLp" checked />低通</label>
           <label><input type="checkbox" id="enBp" />带通</label>
           <label><input type="checkbox" id="enNotch" />陷波</label>
-          <label><input type="checkbox" id="enComb" />梳状</label>
+          <label><input type="checkbox" id="enComb" checked />梳状</label>
         </div>
         <div class="chain-hint" id="chainHint">链路：原始（未启用滤波）</div>
         <label class="ctrl" style="margin:0">
           <input type="checkbox" id="enMirrorPad" checked />
           镜像 padding（ABC→CBABCBA）
         </label>
-        <div class="chain-hint">浏览滤波：高通/低通用镜像 + filtfilt；陷波/梳状用周期延拓（与实时因果主链不同）</div>
+        <div class="chain-hint">EMG 默认与文件去噪一致：镜像 + 双向高通/低通，梳状再做 filtfilt、周期对齐、周期延拓和端点消振。去直流只影响显示和频谱。陷波的这四项默认不执行。</div>
 
         <div class="param" data-show="hp,bp">
           <span>高通截止</span>
@@ -390,6 +400,20 @@
           <button type="button" class="ghost" id="addNotchBtn">添加陷波</button>
           <span class="param-unit">按频率从低到高串联，最多 8 个</span>
         </div>
+        <div class="edge-opts" data-show="notch">
+          <label class="ctrl" title="正反向各滤一次。不勾选则只做单向因果滤波">
+            <input type="checkbox" id="enNotchFiltfilt" /> filtfilt
+          </label>
+          <label class="ctrl" title="按各陷波频率的周期复制首尾，再滤波并裁回原长度">
+            <input type="checkbox" id="enNotchPeriod" /> 周期延拓
+          </label>
+          <label class="ctrl" title="把两端不像该频率周期的片段改写成内侧第一个干净周期">
+            <input type="checkbox" id="enNotchAlign" /> 周期对齐
+          </label>
+          <label class="ctrl" title="端点能量明显高于内部并随时间衰减时，向内部偶反射交叉淡化">
+            <input type="checkbox" id="enNotchFade" /> 端点消振
+          </label>
+        </div>
 
         <div class="param" data-show="comb">
           <span>梳状基频</span>
@@ -407,6 +431,20 @@
           </span>
           <input type="range" id="combBw" min="0.5" max="10" step="0.1" value="2" />
         </div>
+        <div class="edge-opts" data-show="comb">
+          <label class="ctrl" title="正向梳状后再反向梳状。不勾选则只做单向因果梳状">
+            <input type="checkbox" id="enCombFiltfilt" checked /> filtfilt
+          </label>
+          <label class="ctrl" title="按梳状基频的周期复制首尾，再滤波并裁回原长度">
+            <input type="checkbox" id="enCombPeriod" checked /> 周期延拓
+          </label>
+          <label class="ctrl" title="把两端不像基频周期的片段改写成内侧第一个干净周期">
+            <input type="checkbox" id="enCombAlign" checked /> 周期对齐
+          </label>
+          <label class="ctrl" title="端点能量明显高于内部并随时间衰减时，向内部偶反射交叉淡化">
+            <input type="checkbox" id="enCombFade" checked /> 端点消振
+          </label>
+        </div>
       </div>
 
       <h2>通道</h2>
@@ -418,7 +456,7 @@
     <section class="plot-wrap">
       <div class="toolbar">
         <span>滚轮缩放 · 拖拽平移 · 双击复位</span>
-        <span class="hint">EMG 与 EEG 各自采样；浏览滤波为镜像 padding + filtfilt，陷波/梳状端点用周期延拓（非实时因果主链）</span>
+        <span class="hint">EMG 与 EEG 各自采样。EMG 默认梳状与文件去噪相同；去直流只影响显示和频谱</span>
       </div>
       <canvas id="wave"></canvas>
       <div class="spec-head">
@@ -458,8 +496,16 @@
     enableLp: true,
     enableBp: false,
     enableNotch: false,
-    enableComb: false,
+    enableComb: true,
     mirrorPad: true,
+    notchFiltfilt: false,
+    notchPeriod: false,
+    notchAlign: false,
+    notchFade: false,
+    combFiltfilt: true,
+    combPeriod: true,
+    combAlign: true,
+    combFade: true,
     hpHz: 20,
     hpOrder: 2,
     lpHz: 450,
@@ -472,8 +518,13 @@
   const EEG_FILTER = {
     ...DEFAULT_FILTER,
     hpHz: 0.5,
-    lpHz: 50,
+    lpHz: 100,
     enableNotch: true,
+    enableComb: false,
+    combFiltfilt: false,
+    combPeriod: false,
+    combAlign: false,
+    combFade: false,
     notches: [{ f0: 50, bw: 2 }],
   };
 
@@ -831,40 +882,62 @@
       return { samples: z, head, tail };
     }
 
-    /**
-     * Forward-backward biquad notch on a period-continuous pad.
-     * Pad length covers the narrowband ring-down (~1/bandwidth), so the
-     * notch is already settled when it reaches the real samples.
-     */
-    function notchFiltfiltPeriod(x, fs, f0, bw) {
+    /** Repeat the first and last period so a narrow filter can settle before the real samples. */
+    function periodExtend(x, fs, f0, npre) {
+      const src = x instanceof Float32Array ? x : Float32Array.from(x);
       const D = Math.max(1, Math.round(fs / f0));
-      const n = x.length;
-      const settle = Math.ceil((6.9 * fs) / (Math.PI * Math.max(bw, 1e-3)));
-      const npre = Math.min(Math.floor(n / 2), Math.max(D * 8, settle));
-      if (!(npre >= D) || n < D * 4) return sosfiltfilt(iirNotchSos(f0, bw, fs), x);
+      const n = src.length;
       const padded = new Float32Array(n + 2 * npre);
       for (let i = 0; i < npre; i++) {
-        padded[npre - 1 - i] = x[(D - 1 - (i % D) + D) % D];
-        padded[npre + n + i] = x[n - D + (i % D)];
+        padded[npre - 1 - i] = src[(D - 1 - (i % D) + D) % D];
+        padded[npre + n + i] = src[n - D + (i % D)];
       }
-      padded.set(x, npre);
-      return sosfiltfilt(iirNotchSos(f0, bw, fs), padded).slice(npre, npre + n);
+      padded.set(src, npre);
+      return padded;
     }
 
-    /** Forward-backward comb on a period-continuous pad so the notch is already settled. */
-    function combFiltfiltPeriod(x, fs, f0, bw) {
+    function notchPadLength(n, fs, f0, bw) {
       const D = Math.max(1, Math.round(fs / f0));
-      const n = x.length;
-      const npre = Math.max(D * 4, Math.round(2 * fs));
-      const padded = new Float32Array(n + 2 * npre);
-      for (let i = 0; i < npre; i++) {
-        padded[npre - 1 - i] = x[(D - 1 - (i % D) + D) % D];
-        padded[npre + n + i] = x[n - D + (i % D)];
-      }
-      padded.set(x, npre);
-      const fwd = iirComb(padded, fs, { f0, bandwidth: bw });
-      const bwd = iirComb(reverseCopy(fwd.y), fs, { f0, bandwidth: bw });
-      return { samples: reverseCopy(bwd.y).slice(npre, npre + n), delay: fwd.delay };
+      const settle = Math.ceil((6.9 * fs) / (Math.PI * Math.max(bw, 1e-3)));
+      const npre = Math.min(Math.floor(n / 2), Math.max(D * 8, settle));
+      if (!(npre >= D) || n < D * 4) return 0;
+      return npre;
+    }
+
+    function combPadLength(n, fs, f0) {
+      const D = Math.max(1, Math.round(fs / f0));
+      if (n < D) return 0;
+      return Math.max(D * 4, Math.round(2 * fs));
+    }
+
+    function applyNotch(x, fs, f0, bw, { filtfilt, period }) {
+      const sos = iirNotchSos(f0, bw, fs);
+      const run = (buf) => (filtfilt ? sosfiltfilt(sos, buf) : sosfilt(sos, buf));
+      if (!period) return run(x);
+      const npre = notchPadLength(x.length, fs, f0, bw);
+      if (!npre) return run(x);
+      return run(periodExtend(x, fs, f0, npre)).slice(npre, npre + x.length);
+    }
+
+    function applyComb(x, fs, f0, bw, { filtfilt, period }) {
+      const run = (buf) => {
+        const fwd = iirComb(buf, fs, { f0, bandwidth: bw });
+        if (!filtfilt) return { samples: fwd.y, delay: fwd.delay };
+        const bwd = iirComb(reverseCopy(fwd.y), fs, { f0, bandwidth: bw });
+        return { samples: reverseCopy(bwd.y), delay: fwd.delay };
+      };
+      if (!period) return run(x);
+      const npre = combPadLength(x.length, fs, f0);
+      if (!npre) return run(x);
+      const out = run(periodExtend(x, fs, f0, npre));
+      return { samples: out.samples.slice(npre, npre + x.length), delay: out.delay };
+    }
+
+    /** Drop a whole-signal mirror so notch/comb see the original samples. */
+    function releaseMirror(y, padded, n) {
+      if (padded) return { y: mirrorUnpad(y, n), padded: false };
+      if (y instanceof Float32Array) return { y, padded: false };
+      return { y: Float32Array.from(y), padded: false };
     }
 
     /**
@@ -991,41 +1064,55 @@
       if (useNotch) {
         const notches = activeNotches(cfg, fs);
         if (!notches.length) throw new Error("请至少保留一个陷波");
-        // Same edge problem as the comb: a mirrored mains sine is a step at
-        // the fold, and a narrow biquad rings for about a second on it.
-        if (padded) {
-          y = mirrorUnpad(y, n);
-          padded = false;
-        } else if (!(y instanceof Float32Array)) {
-          y = Float32Array.from(y);
-        }
+        // Mirror stays on the broadband stages. Notch options run on the real samples.
+        ({ y, padded } = releaseMirror(y, padded, n));
+        const filtfilt = cfg.notchFiltfilt === true;
+        const period = cfg.notchPeriod === true;
+        const align = cfg.notchAlign === true;
+        const fade = cfg.notchFade === true;
         let head = 0;
         let tail = 0;
         for (const notch of notches) {
-          const aligned = repairPeriodicEdges(y, fs, notch.f0);
-          head = Math.max(head, aligned.head);
-          tail = Math.max(tail, aligned.tail);
-          y = notchFiltfiltPeriod(aligned.samples, fs, notch.f0, notch.bw);
+          if (align) {
+            const aligned = repairPeriodicEdges(y, fs, notch.f0);
+            head = Math.max(head, aligned.head);
+            tail = Math.max(tail, aligned.tail);
+            y = aligned.samples;
+          }
+          y = applyNotch(y, fs, notch.f0, notch.bw, { filtfilt, period });
           stages.push(`陷波${notch.f0}/${notch.bw}Hz`);
         }
-        const faded = fadeEdgeRing(y, fs);
-        y = faded.samples;
-        notchEdge = { head, tail, faded: faded.faded };
+        let fadedN = 0;
+        if (fade) {
+          const faded = fadeEdgeRing(y, fs);
+          y = faded.samples;
+          fadedN = faded.faded;
+        }
+        notchEdge = { head, tail, faded: fadedN, filtfilt, period, align, fade };
       }
       if (useComb) {
-        // Unpad before the comb. Even-mirroring a mains sine reverses its phase
-        // and the comb rings for ~1 s; a period-matched pad is already settled.
-        if (padded) {
-          y = mirrorUnpad(y, n);
-          padded = false;
-        } else if (!(y instanceof Float32Array)) {
-          y = Float32Array.from(y);
+        ({ y, padded } = releaseMirror(y, padded, n));
+        const filtfilt = cfg.combFiltfilt === true;
+        const period = cfg.combPeriod === true;
+        const align = cfg.combAlign === true;
+        const fade = cfg.combFade === true;
+        let head = 0;
+        let tail = 0;
+        if (align) {
+          const aligned = repairPeriodicEdges(y, fs, combF0);
+          head = aligned.head;
+          tail = aligned.tail;
+          y = aligned.samples;
         }
-        const aligned = repairPeriodicEdges(y, fs, combF0);
-        const comb = combFiltfiltPeriod(aligned.samples, fs, combF0, combBw);
-        const faded = fadeEdgeRing(comb.samples, fs);
-        y = faded.samples;
-        combEdge = { head: aligned.head, tail: aligned.tail, faded: faded.faded, delay: comb.delay };
+        const comb = applyComb(y, fs, combF0, combBw, { filtfilt, period });
+        y = comb.samples;
+        let fadedN = 0;
+        if (fade) {
+          const faded = fadeEdgeRing(y, fs);
+          y = faded.samples;
+          fadedN = faded.faded;
+        }
+        combEdge = { head, tail, faded: fadedN, delay: comb.delay, filtfilt, period, align, fade };
         stages.push(`梳状${combF0}/${combBw}Hz(d=${comb.delay})`);
       }
 
@@ -1039,25 +1126,30 @@
         repaired = edge.repaired;
       }
 
+      const ms = (samples) => `${((samples / fs) * 1000).toFixed(0)}ms`;
+      const narrowNotes = (label, edge) => {
+        if (!edge) return [];
+        const bits = [edge.filtfilt ? `${label}filtfilt` : `${label}因果`];
+        if (edge.period) bits.push(`${label}周期延拓`);
+        if (edge.align) {
+          bits.push(
+            edge.head || edge.tail
+              ? `${label}对齐 首${ms(edge.head)} 尾${ms(edge.tail)}`
+              : `${label}周期对齐`
+          );
+        }
+        if (edge.fade) {
+          bits.push(edge.faded ? `${label}消振${ms(edge.faded)}` : `${label}端点消振`);
+        }
+        return bits;
+      };
       const note = [
         `链路：${stages.join(" → ")}`,
-        "filtfilt",
-        useMirror && n >= 2 ? "镜像padding" : null,
-        useNotch ? "陷波周期延拓" : null,
-        notchEdge && (notchEdge.head || notchEdge.tail)
-          ? `陷波对齐 首${((notchEdge.head / fs) * 1000).toFixed(0)}ms 尾${((notchEdge.tail / fs) * 1000).toFixed(0)}ms`
-          : null,
-        notchEdge && notchEdge.faded
-          ? `陷波消振${((notchEdge.faded / fs) * 1000).toFixed(0)}ms`
-          : null,
-        useComb ? "梳状周期延拓" : null,
-        combEdge && (combEdge.head || combEdge.tail)
-          ? `周期对齐 首${((combEdge.head / fs) * 1000).toFixed(0)}ms 尾${((combEdge.tail / fs) * 1000).toFixed(0)}ms`
-          : null,
-        combEdge && combEdge.faded
-          ? `端点消振${((combEdge.faded / fs) * 1000).toFixed(0)}ms`
-          : null,
-        repaired ? `边缘回填${((repaired / fs) * 1000).toFixed(0)}ms` : null,
+        useHp || useLp || useBp ? "filtfilt" : null,
+        useMirror && n >= 2 && (useHp || useLp || useBp) ? "镜像padding" : null,
+        ...narrowNotes("陷波", notchEdge),
+        ...narrowNotes("梳状", combEdge),
+        repaired ? `边缘回填${ms(repaired)}` : null,
         lpClamped && (useLp || useBp) ? "低通已钳位" : null,
         `fs=${fs.toFixed(1)} Hz`,
       ]
@@ -1096,11 +1188,16 @@
     tStart: 0,
     gain: 1,
     drag: null,
+    experimentalEmg: false,
     filterCache: null,
     filterTimer: null,
   };
 
   const els = {
+    experimentalEmg: document.getElementById("experimentalEmg"),
+    experimentalHint: document.getElementById("experimentalHint"),
+    experimentalDetails: document.getElementById("experimentalDetails"),
+    experimentalReport: document.getElementById("experimentalReport"),
     sourceMeta: document.getElementById("sourceMeta"),
     sideSelect: document.getElementById("sideSelect"),
     filterToggles: document.getElementById("filterToggles"),
@@ -1111,6 +1208,14 @@
     enNotch: document.getElementById("enNotch"),
     enComb: document.getElementById("enComb"),
     enMirrorPad: document.getElementById("enMirrorPad"),
+    enNotchFiltfilt: document.getElementById("enNotchFiltfilt"),
+    enNotchPeriod: document.getElementById("enNotchPeriod"),
+    enNotchAlign: document.getElementById("enNotchAlign"),
+    enNotchFade: document.getElementById("enNotchFade"),
+    enCombFiltfilt: document.getElementById("enCombFiltfilt"),
+    enCombPeriod: document.getElementById("enCombPeriod"),
+    enCombAlign: document.getElementById("enCombAlign"),
+    enCombFade: document.getElementById("enCombFade"),
     chainHint: document.getElementById("chainHint"),
     hpHz: document.getElementById("hpHz"),
     hpHzNum: document.getElementById("hpHzNum"),
@@ -1197,8 +1302,11 @@
       return `${key}@${clock.fs_hz.toFixed(3)}@${state.ignoreTimestamps ? "uniform" : "stamp"}`;
     }).join(",");
     return [
+      experimentalOn() ? "experimental-native-fir-v1" : "manual",
       cfg.enableRaw, cfg.enableHp, cfg.enableLp, cfg.enableBp, cfg.enableNotch, cfg.enableComb,
       cfg.mirrorPad,
+      cfg.notchFiltfilt, cfg.notchPeriod, cfg.notchAlign, cfg.notchFade,
+      cfg.combFiltfilt, cfg.combPeriod, cfg.combAlign, cfg.combFade,
       fsPart, cfg.hpHz, cfg.hpOrder, cfg.lpHz, cfg.lpOrder,
       (cfg.notches || []).map((n) => `${n.f0}@${n.bw}`).join(","),
       cfg.combF0, cfg.combBw,
@@ -1248,6 +1356,17 @@
     return Number(shown);
   }
 
+  function experimentalOn() { return state.experimentalEmg && state.kind === "emg"; }
+  function syncExperimentalUi() {
+    const on = experimentalOn();
+    els.experimentalEmg.checked = state.experimentalEmg;
+    els.experimentalEmg.disabled = state.kind !== "emg";
+    els.experimentalHint.hidden = !on; els.experimentalDetails.hidden = !on;
+    document.querySelectorAll("#filterPanel input, #filterPanel select, #filterPanel button").forEach(node => {
+      if (on && !node.dataset.experimentalDisabled) { node.dataset.experimentalDisabled = node.disabled ? "yes" : "no"; node.disabled = true; }
+      else if (!on && node.dataset.experimentalDisabled) { node.disabled = node.dataset.experimentalDisabled === "yes"; delete node.dataset.experimentalDisabled; }
+    });
+  }
   function syncFilterUiFromState() {
     const f = state.filter;
     const bypass = !!f.enableRaw || !anyFilterOn(f);
@@ -1258,6 +1377,14 @@
     els.enNotch.checked = !!f.enableNotch && !bypass;
     els.enComb.checked = !!f.enableComb && !bypass;
     els.enMirrorPad.checked = f.mirrorPad !== false;
+    els.enNotchFiltfilt.checked = f.notchFiltfilt === true;
+    els.enNotchPeriod.checked = f.notchPeriod === true;
+    els.enNotchAlign.checked = f.notchAlign === true;
+    els.enNotchFade.checked = f.notchFade === true;
+    els.enCombFiltfilt.checked = f.combFiltfilt === true;
+    els.enCombPeriod.checked = f.combPeriod === true;
+    els.enCombAlign.checked = f.combAlign === true;
+    els.enCombFade.checked = f.combFade === true;
     setLinked(els.hpHz, els.hpHzNum, f.hpHz);
     els.hpOrder.value = String(f.hpOrder);
     setLinked(els.lpHz, els.lpHzNum, f.lpHz);
@@ -1267,6 +1394,7 @@
     setLinked(els.combBw, els.combBwNum, f.combBw);
     updateParamVisibility();
     updateChainHint();
+    syncExperimentalUi();
   }
 
   function readFilterFromUi() {
@@ -1278,6 +1406,14 @@
       enableNotch: els.enNotch.checked,
       enableComb: els.enComb.checked,
       mirrorPad: els.enMirrorPad.checked,
+      notchFiltfilt: els.enNotchFiltfilt.checked,
+      notchPeriod: els.enNotchPeriod.checked,
+      notchAlign: els.enNotchAlign.checked,
+      notchFade: els.enNotchFade.checked,
+      combFiltfilt: els.enCombFiltfilt.checked,
+      combPeriod: els.enCombPeriod.checked,
+      combAlign: els.enCombAlign.checked,
+      combFade: els.enCombFade.checked,
       hpHz: setLinked(els.hpHz, els.hpHzNum, els.hpHz.value),
       hpOrder: Number(els.hpOrder.value),
       lpHz: setLinked(els.lpHz, els.lpHzNum, els.lpHz.value),
@@ -1316,24 +1452,45 @@
     });
   }
 
+  function narrowMode(filtfiltEl, periodEl, alignEl, fadeEl) {
+    const bits = [filtfiltEl.checked ? "filtfilt" : "因果"];
+    if (periodEl.checked) bits.push("周期延拓");
+    if (alignEl.checked) bits.push("周期对齐");
+    if (fadeEl.checked) bits.push("端点消振");
+    return `（${bits.join("·")}）`;
+  }
+
   function updateChainHint() {
-    const parts = [];
-    if (els.enHp.checked) parts.push("高通");
-    if (els.enLp.checked) parts.push("低通");
-    if (els.enBp.checked) parts.push("带通");
+    if (experimentalOn()) { els.chainHint.textContent = "实验：原生 2 kHz → 最终 20–450 Hz → 按通道自适应 FIR（±1–4 Hz）→ 边界标记；手动链路暂停"; return; }
+    const broadband = [];
+    if (els.enHp.checked) broadband.push("高通");
+    if (els.enLp.checked) broadband.push("低通");
+    if (els.enBp.checked) broadband.push("带通");
+    const narrow = [];
     if (els.enNotch.checked) {
       const freqs = (state.filter.notches || []).map((n) => n.f0);
-      parts.push(freqs.length ? `陷波${freqs.join("/")}Hz` : "陷波");
+      const name = freqs.length ? `陷波${freqs.join("/")}Hz` : "陷波";
+      narrow.push(
+        `${name}${narrowMode(els.enNotchFiltfilt, els.enNotchPeriod, els.enNotchAlign, els.enNotchFade)}`
+      );
     }
-    if (els.enComb.checked) parts.push("梳状");
-    if (!parts.length) {
+    if (els.enComb.checked) {
+      narrow.push(
+        `梳状${narrowMode(els.enCombFiltfilt, els.enCombPeriod, els.enCombAlign, els.enCombFade)}`
+      );
+    }
+    if (!broadband.length && !narrow.length) {
       els.chainHint.textContent = "链路：原始（未启用滤波）";
       return;
     }
-    const pad = els.enMirrorPad.checked ? "镜像padding → " : "";
-    const notchPad = els.enNotch.checked ? " · 陷波周期延拓" : "";
-    const combPad = els.enComb.checked ? " · 梳状周期延拓" : "";
-    els.chainHint.textContent = `链路：${pad}${parts.join(" → ")}（filtfilt）${els.enMirrorPad.checked ? " → 裁剪" : ""}${notchPad}${combPad}`;
+    const parts = [];
+    if (broadband.length) {
+      const pad = els.enMirrorPad.checked ? "镜像padding → " : "";
+      const crop = els.enMirrorPad.checked ? " → 裁剪" : "";
+      parts.push(`${pad}${broadband.join(" → ")}（filtfilt）${crop}`);
+    }
+    if (narrow.length) parts.push(narrow.join(" → "));
+    els.chainHint.textContent = `链路：${parts.join(" → ")}`;
   }
 
   function updateLpSliderLimit() {
@@ -1444,6 +1601,54 @@
     return Math.sqrt(s / arr.length);
   }
 
+  let experimentalMemo = null, experimentalJob = null;
+  function stopExperimentalJob() { experimentalJob?.worker?.terminate(); experimentalJob = null; }
+  function ensureExperimental(keys, key) {
+    if (experimentalMemo?.data !== state.data) { stopExperimentalJob(); experimentalMemo = { data: state.data, sides: {} }; }
+    if (experimentalJob?.error) throw new Error(experimentalJob.error);
+    const missing = keys.filter(side => !experimentalMemo.sides[side]);
+    if (missing.length) {
+      if (!experimentalJob) {
+        const data = state.data, job = { worker: null, started: performance.now(), progress: "准备后台计算…" };
+        experimentalJob = job;
+        try {
+          const worker = new Worker("./experimental_emg.js"); job.worker = worker;
+          worker.onmessage = ({ data: output }) => {
+            if (experimentalJob !== job || state.data !== data) return;
+            if (output.progress) { job.progress = output.progress; if (experimentalOn()) { setStatus(`实验计算：${output.progress}`); els.experimentalReport.textContent = output.progress; } return; }
+            worker.terminate();
+            if (output.error) { job.error = output.error; draw(); return; }
+            for (const [side, result] of Object.entries(output.sides)) experimentalMemo.sides[side] = { ...result, ms: performance.now() - job.started };
+            experimentalJob = null; state.filterCache = null; state.specCache = null;
+            if (experimentalOn()) { rebuildChannelList(); draw(); }
+          };
+          worker.onerror = event => {
+            if (experimentalJob !== job || state.data !== data) return;
+            worker.terminate(); job.error = `实验计算失败：${event.message || "请通过 HTTP 打开 Viewer 并检查实验脚本可加载"}`; draw();
+          };
+          const sides = missing.map(side => { const b = data.sides[side]; return { key: side, time: Float64Array.from(b.time), meanRate: meanSampleRate(b.time), channels: b.channels.map(c => Float64Array.from(c)) }; });
+          worker.postMessage({ sides }, sides.flatMap(b => [b.time.buffer, ...b.channels.map(c => c.buffer)]));
+        } catch (error) { stopExperimentalJob(); throw error; }
+      }
+      return { key, sides: {}, pending: true, note: experimentalJob.progress, ms: 0 };
+    }
+    const sides = {}, lines = []; let selected = 0, unresolved = 0, short = 0, ms = 0;
+    for (const side of keys) {
+      const b = state.data.sides[side], r = experimentalMemo.sides[side], clock = effectiveClock(b);
+      sides[side] = { names: b.names, channels: r.channels, mean: r.channels.map(mean), std: r.channels.map(std), time: clock.time, fs_hz: 2000, diagnostics: r.diagnostics };
+      ms = Math.max(ms, r.ms);
+      r.diagnostics.forEach((segments, channel) => segments.forEach((seg, index) => {
+        const label = `${b.names[channel] || channel} / 片段 ${index + 1}`;
+        if (seg.short) { short++; lines.push(`${label}：不足 8 秒，原始信号，无有效区`); return; }
+        const bands = seg.widths.map((w,j) => w ? `${(j+1)*50}±${w}` : "").filter(Boolean);
+        selected += bands.length; unresolved += seg.unresolved.length;
+        lines.push(`${label}：${bands.join(", ") || "未检测到显著工频"} Hz${seg.unresolved.length ? `；未达标 ${seg.unresolved.join(", ")} Hz` : "；工频 QC 通过"}`);
+      }));
+    }
+    els.experimentalReport.textContent = ["实验预览；假设设备原生等间隔 2 kHz，保留样本数和时间戳。", "设计截止 16.047/484.868 Hz，双向后最终 −3 dB 为 20/450 Hz。", "4 秒 Hann Welch / FFT 8192；6 dB 阈值；FIR 8001 点，Kaiser β=8.6，过渡 1.5 Hz。", "未达标项需复核；不自动移除非工频峰，不代表生理真值验证。", ...lines].join("\n");
+    const note = `实验：原生 2 kHz → 最终 20–450 Hz → 自适应 FIR · ${selected} 个谐波/通道 · 未达标 ${unresolved} · 短段 ${short} · 阴影无效（统计/频谱含阴影）`;
+    state.filterCache = { key, sides, note, ms }; return state.filterCache;
+  }
   function ensureFiltered() {
     if (!state.data) return null;
     const keys = activeSideKeys();
@@ -1452,6 +1657,7 @@
     if (state.filterCache && state.filterCache.key === key) {
       return state.filterCache;
     }
+    if (experimentalOn()) return ensureExperimental(keys, key);
     const sides = {};
     let note = "原始信号";
     const t0 = performance.now();
@@ -1503,6 +1709,7 @@
           index: i,
           name: block.names[i] || `${side[0].toUpperCase()}${i}`,
           samples,
+          segments: block.diagnostics?.[i],
           time: block.time,
           color: channelColor(i),
           mean: block.mean[i] ?? mean(samples),
@@ -1589,11 +1796,18 @@
     let filterInfo = null;
     try {
       filterInfo = ensureFiltered();
+      if (filterInfo?.pending) {
+        setStatus(`实验计算：${filterInfo.note}`);
+        els.filterNote.textContent = "后台计算中；尚未显示实验结果。取消勾选可切回原链路。";
+        ctx.clearRect(0, 0, els.canvas.width, els.canvas.height); specCtx.clearRect(0, 0, els.specCanvas.width, els.specCanvas.height);
+        els.statsBox.textContent = "实验结果计算中…"; els.specNote.textContent = "实验结果计算中…"; return;
+      }
       const extra = state.data.loadNote ? ` · ${state.data.loadNote}` : "";
       setStatus(`已加载 ${state.data.source}${extra}`);
     } catch (err) {
       setStatus(`滤波失败：${err.message}`, true);
       els.filterNote.textContent = err.message;
+      if (experimentalOn()) { els.statsBox.textContent = "实验方案未生成结果"; els.experimentalReport.textContent = err.message; }
       return;
     }
     clampWindow();
@@ -1626,7 +1840,7 @@
     const rowH = plotH / chans.length;
 
     // Warmup shade only when filtering without mirror padding (causal startup).
-    if (anyFilterOn(state.filter) && !state.filter.enableRaw && !state.filter.mirrorPad) {
+    if (!experimentalOn() && anyFilterOn(state.filter) && !state.filter.enableRaw && !state.filter.mirrorPad) {
       const warmEnd = Math.min(t1, 1.0);
       if (warmEnd > t0) {
         const x0 = padL;
@@ -1650,6 +1864,16 @@
     const stats = [];
     chans.forEach((ch, row) => {
       const y0 = padT + row * rowH;
+      if (ch.segments) {
+        ctx.fillStyle = "rgba(224, 163, 91, 0.16)";
+        for (const seg of ch.segments) {
+          const ranges = seg.short ? [[seg.start,seg.end]] : [[seg.start,seg.validStart],[seg.validEnd,seg.end]];
+          for (const [start,end] of ranges) {
+            const a = Math.max(t0,ch.time[start]), b = Math.min(t1,end < ch.time.length ? ch.time[end] : ch.time[ch.time.length-1]);
+            if (b > a) ctx.fillRect(padL+(a-t0)/(t1-t0)*plotW,y0,(b-a)/(t1-t0)*plotW,rowH);
+          }
+        }
+      }
       const mid = y0 + rowH / 2;
       ctx.strokeStyle = "#243040";
       ctx.beginPath();
@@ -2205,6 +2429,15 @@
     updateChainHint();
     scheduleFilterRedraw();
   });
+  [
+    "enNotchFiltfilt", "enNotchPeriod", "enNotchAlign", "enNotchFade",
+    "enCombFiltfilt", "enCombPeriod", "enCombAlign", "enCombFade",
+  ].forEach((id) => {
+    els[id].addEventListener("change", () => {
+      updateChainHint();
+      scheduleFilterRedraw();
+    });
+  });
 
   function bindLinkedPair(rangeEl, numEl) {
     rangeEl.addEventListener("input", () => {
@@ -2231,7 +2464,12 @@
   ["hpOrder", "lpOrder"].forEach((id) => {
     els[id].addEventListener("change", scheduleFilterRedraw);
   });
+  els.experimentalEmg.addEventListener("change", () => {
+    state.experimentalEmg = els.experimentalEmg.checked;
+    stopExperimentalJob(); state.filterCache = null; state.specCache = null; syncFilterUiFromState(); draw();
+  });
   els.resetFilterBtn.addEventListener("click", () => {
+    if (state.kind === "emg") { state.experimentalEmg = false; stopExperimentalJob(); }
     const preset = state.kind === "eeg" ? EEG_FILTER : DEFAULT_FILTER;
     state.filterByKind[state.kind] = cloneFilter(preset);
     state.filter = cloneFilter(preset);

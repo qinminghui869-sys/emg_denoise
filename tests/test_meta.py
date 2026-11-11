@@ -1,14 +1,14 @@
 import json
 from pathlib import Path
 
-from emg_eeg_denoise.cli import main
-from emg_eeg_denoise.pipeline.meta import (
+from emg_denoise.cli import main
+from emg_denoise.pipeline.meta import (
     backfill_session_meta,
     feature_key_from_path,
     find_session_root,
     register_recording_meta,
 )
-from emg_eeg_denoise.pipeline.retime import RetimeOptions, run_retime
+from emg_denoise.pipeline.retime import RetimeOptions, run_retime
 from tests.test_timebase import write_acquisition_parquet
 
 

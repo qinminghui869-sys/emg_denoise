@@ -327,11 +327,13 @@
         <span id="gainLabel">1.0×</span>
       </label>
       <button class="primary" id="loadSampleBtn" type="button">加载示例</button>
-      <button type="button" id="openDirBtn" title="自动加载 observation.left_wrist_emg.parquet 与 observation.right_wrist_emg.parquet">打开文件夹</button>
+      <button type="button" id="openDirBtn" title="自动加载腕部 EMG parquet；目录里没有 parquet 时加载 npz">打开文件夹</button>
       <button type="button" id="openParquetBtn" title="打开 observation.eeg.parquet 或腕部 EMG parquet，可多选">打开 Parquet</button>
+      <button type="button" id="openNpzBtn" title="读取 emg_data 与 emg_timestamps。文件名含 right / left 当作右手 / 左手，可多选">打开 NPZ</button>
       <button type="button" id="openFileBtn">JSON/CSV</button>
       <input type="file" id="dirInput" webkitdirectory directory multiple hidden />
       <input type="file" id="parquetInput" accept=".parquet,application/vnd.apache.parquet" multiple hidden />
+      <input type="file" id="npzInput" accept=".npz,application/zip" multiple hidden />
       <input type="file" id="fileInput" accept=".json,.csv,application/json,text/csv" hidden />
     </div>
   </header>
@@ -1241,9 +1243,11 @@
     loadSampleBtn: document.getElementById("loadSampleBtn"),
     openDirBtn: document.getElementById("openDirBtn"),
     openParquetBtn: document.getElementById("openParquetBtn"),
+    openNpzBtn: document.getElementById("openNpzBtn"),
     openFileBtn: document.getElementById("openFileBtn"),
     dirInput: document.getElementById("dirInput"),
     parquetInput: document.getElementById("parquetInput"),
+    npzInput: document.getElementById("npzInput"),
     fileInput: document.getElementById("fileInput"),
     chanList: document.getElementById("chanList"),
     statsBox: document.getElementById("statsBox"),
@@ -2509,6 +2513,32 @@
     return parquetApiPromise;
   }
 
+  let npzApiPromise = null;
+  function npzApi() {
+    if (!npzApiPromise) npzApiPromise = import("./npz_loader.js");
+    return npzApiPromise;
+  }
+
+  async function loadNpzSelection(fileList) {
+    const api = await npzApi();
+    const files = [...fileList].filter((file) => /\.npz$/i.test(file.name) && !file.name.startsWith("._"));
+    if (!files.length) throw new Error("请选择 npz 文件");
+    const sides = {};
+    const notes = [];
+    for (const file of files) {
+      setStatus(`正在读取 ${file.name} …`);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const parsed = await api.streamFromNpz(await file.arrayBuffer(), file.name);
+      const label = parsed.role === "right" ? "右手" : "左手";
+      if (sides[parsed.role]) notes.push(`${file.name} 覆盖了已载入的${label}`);
+      sides[parsed.role] = parsed.block;
+      if (parsed.note) notes.push(`${file.name}：${parsed.note}`);
+    }
+    const data = api.datasetFromSides(files.map((file) => file.name).join(" + "), sides);
+    data.loadNote = notes.join("；");
+    loadData(data);
+  }
+
   async function loadParquetSelection(fileList, { folder }) {
     const api = await parquetApi();
     const files = [...fileList];
@@ -2554,16 +2584,32 @@
 
   els.openDirBtn.addEventListener("click", () => els.dirInput.click());
   els.openParquetBtn.addEventListener("click", () => els.parquetInput.click());
+  els.openNpzBtn.addEventListener("click", () => els.npzInput.click());
   els.openFileBtn.addEventListener("click", () => els.fileInput.click());
   els.dirInput.addEventListener("change", async () => {
     const files = els.dirInput.files;
     if (!files?.length) return;
     try {
-      await loadParquetSelection(files, { folder: true });
+      const list = [...files];
+      const npzFiles = list.filter((file) => /\.npz$/i.test(file.name) && !file.name.startsWith("._"));
+      const hasParquet = list.some((file) => /\.parquet$/i.test(file.name) && !file.name.startsWith("._"));
+      if (npzFiles.length && !hasParquet) await loadNpzSelection(npzFiles);
+      else await loadParquetSelection(list, { folder: true });
     } catch (err) {
       setStatus(`文件夹导入失败：${err.message}`, true);
     } finally {
       els.dirInput.value = "";
+    }
+  });
+  els.npzInput.addEventListener("change", async () => {
+    const files = els.npzInput.files;
+    if (!files?.length) return;
+    try {
+      await loadNpzSelection(files);
+    } catch (err) {
+      setStatus(`NPZ 导入失败：${err.message}`, true);
+    } finally {
+      els.npzInput.value = "";
     }
   });
   els.parquetInput.addEventListener("change", async () => {

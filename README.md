@@ -53,7 +53,7 @@ emg_denoise/
 │   │   └── meta.py         # 写入 / 回填 meta/info.json
 │   └── qc/                 # 只读质量检查
 ├── tests/
-├── viz/                    # 浏览页；experimental_emg.js 仅预览
+├── viz/                    # 浏览页；npz_loader.js 读采集 npz；experimental_emg.js 仅预览
 ├── docs/                   # 架构说明与历史核查记录
 ├── dag.html                # 处理链路图
 └── .github/workflows/ci.yml
@@ -228,8 +228,9 @@ python3 -m http.server 8765 --directory viz
 
 | 入口 | 行为 |
 |---|---|
-| 打开文件夹 | 自动读取左右腕 EMG；也可选 `*.denoised.parquet` |
+| 打开文件夹 | 自动读取左右腕 EMG；也可选 `*.denoised.parquet`。没有 parquet 时读取目录中的 `.npz` |
 | 打开 Parquet | 单文件或多选腕部 EMG |
+| 打开 NPZ | 读取 `emg_data` 与 `emg_timestamps`。文件名含 `right` / `left` 当作右手 / 左手，可多选。IMU 不显示 |
 | JSON/CSV | 示例 JSON 或带 `timestamp` 列的 CSV |
 
 浏览页 EMG 默认手动链路与上面的文件 `process` 相同。去直流只影响波形和频谱，不进入去噪文件。梳状的 filtfilt、周期对齐、周期延拓、端点消振，以及陷波的对应项，仍可单独关掉。实验 FIR 与 `--causal` / `RealtimeDenoiser` 不是这条链路。

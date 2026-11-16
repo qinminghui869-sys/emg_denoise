@@ -4,7 +4,7 @@
 
 1. **EMG 时间戳重建**：采集 tick 量化时间戳 → 双锚点分段插值
 2. **EMG 去噪**：20 Hz 高通 → 450 Hz 低通 → 50 Hz 梳状（BW=2 Hz，Q=25），2 kHz
-3. **可视化**：`viz/viewer.html` 离线浏览（EMG 默认与文件去噪同链；去直流只用于显示和频谱）
+3. **可视化**：`viz/viewer.html` 离线浏览（EMG 默认与文件去噪同链；去直流只用于显示和频谱）。可读 parquet、JSON/CSV，以及采集 `.npz`（`emg_data` + `emg_timestamps`）
 
 ## 包布局
 
@@ -67,7 +67,7 @@ emg_denoise/
 | `pipeline.meta` | 合并诊断进 `meta/info.json`、sidecar 回填 | DSP 计算 |
 | `qc` | 只读发现、窗口指标、报告 | 修改信号、时基或 meta |
 | `io` / `cli` | 校验、原子写入、可读摘要 / `--json` | 内嵌滤波系数选择 |
-| `viz/` | 离线波形浏览器 | 实时设备驱动、写回去噪文件 |
+| `viz/` | 离线波形浏览器（parquet、JSON/CSV、采集 npz） | 实时设备驱动、写回去噪文件 |
 
 ## 关键约束
 
@@ -88,6 +88,8 @@ emg_denoise/
 ## 离线浏览与文件去噪
 
 `viz/viewer.html` 的 EMG 默认手动链路与文件 `process` 相同：镜像延拓 + 双向高通/低通，然后周期对齐、周期延拓、双向梳状和端点消振。去直流只减去显示和频谱中的通道均值，不写入去噪文件，也不代替 20 Hz 高通。陷波的 filtfilt、周期延拓、周期对齐、端点消振默认不执行。实时因果主链仅用于 `RealtimeDenoiser` 与 `--causal`；实验自适应 FIR 只在浏览页预览。
+
+采集 `.npz` 由 `viz/npz_loader.js` 在浏览器里解包。它读取 `emg_data` 与 `emg_timestamps`；文件名含 `right` / `left` 时分别当作右手和左手。没有时间戳时按 2000 Hz 样本序号排列。IMU 采样率不同，不进入波形。目录里没有 parquet 时，「打开文件夹」走同一条加载路径。
 
 ## EMG QC
 
